@@ -126,7 +126,7 @@ tests/rename-grid-bottom.js 351
 tests/js/runfile.js 313
 tests/ring-bounds.qml 710
 tests/menu-fit.qml 448
-tests/search-live.qml 417
+tests/search-live.qml 419
 tests/sidebar-flows.qml 691
 tests/touchpad.qml 882
 tests/xwsettings-tabs.qml 379
