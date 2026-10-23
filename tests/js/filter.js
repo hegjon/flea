@@ -207,6 +207,20 @@ function run(check) {
     // States' no-match tile: the query named back, and the count of rows the filter tested.
     check("a filter that matches none says how many rows it tested", Filter.noMatch(11), "No match among 11 items")
     check("and a single item keeps the sentence readable", Filter.noMatch(1), "No match among 1 item")
+    // Issue 315: viewOf is a binary search over the ascending match list, so a 100,000-row answer costs each delegate nothing.
+    check("viewOf finds a shown row's view position at either end and in the middle",
+          [Filter.viewOf([3, 8, 9, 20], 3), Filter.viewOf([3, 8, 9, 20], 9), Filter.viewOf([3, 8, 9, 20], 20)].join(","), "0,2,3")
+    check("and answers -1 for a hidden row between, before or past the matches, and in an empty list",
+          [Filter.viewOf([3, 8, 9, 20], 5), Filter.viewOf([3, 8, 9, 20], 1), Filter.viewOf([3, 8, 9, 20], 21), Filter.viewOf([], 0)].join(","), "-1,-1,-1,-1")
+
+    // Issue 315 part 2: Esc with the window held far down the folder left the view at the top, drawing
+    // rows the pane did not hold, so Esc parks the listing on the cursor's own row.
+    var parked = Fixture.pane("2026", 1800)
+    parked.total = 5000
+    parked.cursorIndex = 1805
+    Filter.escape(parked); parked.refresh()
+    check("esc from a filter clears the query", parked.filterQuery, "")
+    check("and scrolls to the cursor's row, which is its view position with no filter up", parked.scrolled, 1805)
 
     var pointed = Fixture.pane()
     Filter.setCursor(pointed, 4, 0)

@@ -632,6 +632,7 @@ def stub_allowances():
         ('tests/js/focus.js', 'made'): 'Records backend.mkdir calls through stub methods.',
         ('tests/js/focus.js', 'openedCopyAs'): 'Records openCopyAsFlyout calls.',
         ('tests/js/focus.js', 'openedPasteAs'): 'Records openPasteAsFlyout calls.',
+        ('tests/js/focus.js', 'parked'): 'Records the view position showRow was handed by Escape over a filter.',
         ('tests/js/focus.js', 'pasted'): 'Records paste calls through stub methods.',
         ('tests/js/focus.js', 'retreated'): 'Records escapePressed calls through stub methods.',
         ('tests/js/focus.js', 'said'): 'Records messages emitted by the stub message signal.',

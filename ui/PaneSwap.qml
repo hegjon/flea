@@ -3,6 +3,7 @@ import "js/RecentMode.js" as RecentMode
 import "js/Anchor.js" as Anchor
 import "js/BackReturn.js" as BackReturn
 import "js/DirSizes.js" as DirSizes
+import "js/FilterWire.js" as FilterWire
 import "js/Nav.js" as Nav
 import "js/Reload.js" as Reload
 import "js/Search.js" as Search
@@ -144,6 +145,8 @@ Item {
         root.pane.held = start
         root.pane.rows = RecentMode.stampRows(root.pane, items)
         root.pane.kindNames = kinds
+        // A window of another numbering under a standing query asks the folder again (issue 315).
+        FilterWire.relisted(root.pane, listing)
         root.rowsLanded()
     }
 

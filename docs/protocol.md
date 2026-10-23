@@ -505,6 +505,49 @@ Drops the index and answers one line:
 
 With no session open it answers nothing.
 
+### filter
+
+`{"c":"filter","query":"<string>","gen":<uint>,"first":<uint>,"count":<uint>}`
+
+Example: `{"c":"filter","query":"file-2345","gen":9,"first":0,"count":330}`
+
+The `/` filter's ask, issue 315. Tests every name of the current listing, which the backend
+already holds, against `query` as a case-insensitive substring, the test `ui/js/Match.js` paints
+in the row name, and answers two lines in this order:
+
+1. One `filtered` line naming the matches as runs of listing rows, so the client has the whole
+   shown model before any row of it lands.
+2. One `frows` line for the view window `first..first+count` over those matches, stat'd now, the
+   same meaning `window`'s `start` and `count` have over the listing: `first` is a position among
+   the matches and not a listing row.
+
+No walk and no stat is paid for the matching itself: the names are the listing's, lowercased once
+per numbering and kept while the listing stands, and a query extending the previous one tests only
+the previous matches. `gen` is the client's number, newer per keystroke; a query whose `gen` is not
+newer than the last answered one is dropped in silence, so a burst answers only its newest. A
+`list`, `listpaths`, `sort` or search renumbers the rows and drops the standing matches with them;
+the next `filter` reads the names again under the new numbering. Over a search listing the whole
+ranked rest is adopted first, as a `sort` does, so no match names a row the ranking could still move.
+Missing fields default to the empty query, gen `0`, which is never newer, and `0`.
+
+### filterwindow
+
+`{"c":"filterwindow","start":<uint>,"count":<uint>}`
+
+Example: `{"c":"filterwindow","start":1200,"count":330}`
+
+Stats the matches `start..start+count` of the standing `filter` query and answers one `frows`
+line, which is how a client scrolling under a filter fetches the rows it is about to draw and
+nothing else. `start` and `count` are clamped to the match count. With no query standing over the
+current numbering it answers nothing, so a window that raced a close or a sort is silent.
+
+### filterclose
+
+`{"c":"filterclose"}`
+
+Drops the standing matches and answers nothing. The client sends it when the query empties; a
+close with nothing standing is a no-op.
+
 ### thumb
 
 `{"c":"thumb","rows":[<uint>,...]}`
@@ -1786,6 +1829,32 @@ what the status bar counts up while it runs. `ms` is the whole walk, to three de
 places. `cancelled` is true when a `searchcancel`, a `list` or a `sort` ended the walk early,
 and false when it ran the subtree out. The rows are in rank order by the time this line is
 written, so a client holding a window from before it has stale indices and re-reads.
+
+### filtered
+
+`{"t":"filtered","gen":<uint>,"n":<uint>,"runs":[[<uint>,<uint>],...],"ms":<float>,"listing":<uint>}`
+
+Example: `{"t":"filtered","gen":9,"n":11,"runs":[[233,1],[2339,10]],"ms":0.412,"listing":4}`
+
+The first answer to a `filter`. `n` is the match count and `runs` the matches as maximal runs
+of consecutive listing rows, each `[start, length]` in ascending order, so a letter every name
+shares is one pair and not a hundred thousand numbers; a client expands them in order and the
+result is the listing rows the query keeps, which is what its selection and every write operation
+still hold. `gen` is the query's own, `listing` the numbering the rows are in, and `ms` the
+matching time to three decimal places. A client drops a line whose `gen` is not its newest or
+whose `listing` is not the one it holds.
+
+### frows
+
+`{"t":"frows","start":<uint>,"rows":[{"n":<string>,...,"k":<uint>,"r":<uint>,...},...],"kinds":[<string>,...],"ms":<float>,"listing":<uint>,"gen":<uint>}`
+
+Example: `{"t":"frows","start":0,"rows":[{"n":"file-0234.txt","d":false,"s":0,"m":1787790423,"p":33188,"i":"text-x-generic","t":false,"k":0,"r":233}],"kinds":["Plain text document"],"ms":0.090,"listing":4,"gen":9}`
+
+The window of matched rows a `filter` or `filterwindow` asked for. The row shape is `rows`'
+own, with one field more: `r`, right after `k`, is the listing row this row is, because the rows a
+filter shows are a set and not a run and `start` here is a position among the matches. `kinds` is
+this line's own Kind dictionary, which only its rows' `k` index; a client keeps it beside the
+listing window's. The line is stamped with `listing` and `gen` the way a session's rows line is.
 
 ### thumbed
 

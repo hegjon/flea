@@ -7,6 +7,7 @@ import "js/Drag.js" as DragOps
 import "js/DragOut.js" as DragOut
 import "js/ExtThumbs.js" as ExtThumbs
 import "js/Filter.js" as Filter
+import "js/FilterWire.js" as FilterWire
 import "js/Focus.js" as Focus
 import "js/GridGeometry.js" as GridGeometry
 import "js/Scroll.js" as Scroll
@@ -450,7 +451,12 @@ GridView {
     Component.onCompleted: root.takeHeld()
     // The held rows as the tiles read them, taken once per rows write: held and rows land as two writes, and a tile bound to both would read the old rows against the new start.
     property var heldRows: ({ start: 0, rows: [], listing: 0 })
-    function takeHeld() { if (root.pane) root.heldRows = { start: root.pane.held, rows: root.pane.rows, listing: root.pane.backend ? root.pane.backend.heldListing : 0 } }
+    // more is the filter window's row for a matched tile the held window does not hold (issue 315): a tile's row binding reads that window through it, so the window landing re-reads the tile.
+    function takeHeld() {
+        if (!root.pane) return
+        root.heldRows = { start: root.pane.held, rows: root.pane.rows, listing: root.pane.backend ? root.pane.backend.heldListing : 0,
+            more: function (index) { return root.pane.shown === null ? null : FilterWire.rowAt(root.pane, index) } }
+    }
     // The held window in tile rows, where Pane's windowSize and buffer count list rows: the list's context in pixels, rebuilt in tiles.
     readonly property var windowPlan: GridGeometry.windowFor(root.columns, root.visibleTileRows, root.pane.buffer, Theme.fileRowHeight, root.cellHeightPx, root.pane.refetchMargin)
     // A cursor landing past the held rows asks for its window now, ahead of the move Pane.showRow makes right after, so the first layout binds real rows.
@@ -500,6 +506,11 @@ GridView {
         // The view is parked on the old rows until the landing window arrives; a drift ask from there would fetch the window it left.
         if (root.landingWait) return
         var range = root.visibleRange()
+        // Under a filter the tiles are matches, so the window asked for is the filter's own, in view space (issue 315).
+        if (root.pane.shown !== null) {
+            if (root.visible && !root.pane.listInFlight) FilterWire.drift(root.pane, range.first, range.last)
+            return
+        }
         root.askWindow(GridGeometry.driftAsk(root.windowPlan, range.first, range.last, root.pane.held, root.pane.rows.length, root.pane.total))
     }
 

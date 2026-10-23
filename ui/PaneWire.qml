@@ -3,6 +3,7 @@ import "." as Flea
 import "js/DirSizes.js" as DirSizes
 import "js/DragOut.js" as DragOut
 import "js/Errors.js" as Errors
+import "js/FilterWire.js" as FilterWire
 import "js/Anchor.js" as Anchor
 import "js/Archive.js" as Archive
 import "js/BackReturn.js" as BackReturn
@@ -189,6 +190,9 @@ Item {
 
         function onListed(total, readMs, sortMs, path, changed, gen) { swap.takeListed(total, readMs, sortMs, path, changed, gen) }
         function onRows(start, items, ms, kinds, listing, gen) { swap.takeRows(start, items, kinds, listing, gen) }
+        // The filter's two answers, issue 315: the folder's matches, then one view window of their rows.
+        function onFiltered(gen, total, runs, ms, listing) { FilterWire.answered(pane, gen, total, runs, listing) }
+        function onFilterRows(start, items, kinds, listing, gen) { FilterWire.windowed(pane, start, items, kinds, listing, gen) }
 
         function onLocated(message) {
             if (BackReturn.takeLocated(pane, message)) return

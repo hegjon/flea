@@ -1276,6 +1276,26 @@ udisks_out=$(python3 tests/flash-udisks.py "$PWD/tools/flea-udisks" 2>&1)
 check "the udisks helper's decisions all hold" "1" "$(printf '%s\n' "$udisks_out" | grep -c '^flash-udisks: all checks passed$')"
 printf '%s\n' "$udisks_out" | grep '^FAIL' || true
 
+# The filter answers over the names the listing holds (issue 315): the matches as runs, then one view
+# window of their rows, each naming its listing row. Its own folder, since the cases above grew the tree: 0 sub, 1 empty.txt, 2 three.txt.
+F="$SB/filter"
+mkdir -p "$F/sub"
+: > "$F/empty.txt"
+: > "$F/three.txt"
+out=$(printf '{"c":"list","path":"%s","first":0}\n{"c":"filter","query":"T","gen":1,"first":0,"count":10}\n{"c":"quit"}\n' "$F" | $BIN --backend)
+check "a filter answers its matches as runs, case-insensitively, in listing order" '"n":2,"runs":[[1,2]]' "$(echo "$out" | sed -n 3p | grep -oE '"n":[0-9]+,"runs":\[\[[0-9,]*\]\]')"
+check "the filtered line is stamped with the gen and the listing" '"gen":1,"n":2' "$(echo "$out" | sed -n 3p | grep -oE '"gen":[0-9]+,"n":[0-9]+')"
+check "and its first window carries the matched rows, each with its listing row" "empty.txt:1 three.txt:2" "$(echo "$out" | sed -n 4p | grep -oE '"n":"[^"]+"|"r":[0-9]+' | paste -d: - - | tr -d '"' | sed 's/^n://; s/:r:/:/' | tr '\n' ' ' | sed 's/ $//')"
+check "the frows line is stamped with the listing and the gen" '"listing":1,"gen":1}' "$(echo "$out" | sed -n 4p | grep -oE '"listing":[0-9]+,"gen":[0-9]+}$')"
+check "a rows line still carries no listing row of its own" "0" "$(echo "$out" | sed -n 2p | grep -c '"r":')"
+out=$(printf '{"c":"list","path":"%s","first":0}\n{"c":"filter","query":"t","gen":1,"first":0,"count":10}\n{"c":"filterwindow","start":1,"count":5}\n{"c":"filter","query":"e","gen":1,"first":0,"count":10}\n{"c":"filterclose"}\n{"c":"filterwindow","start":0,"count":5}\n{"c":"quit"}\n' "$F" | $BIN --backend)
+check "a filter window names the standing matches from a view position" "three.txt" "$(echo "$out" | sed -n 5p | grep -oE '"n":"[^"]+"' | cut -d'"' -f4 | tr '\n' ' ' | sed 's/ $//')"
+check "a query whose gen is not newer is dropped in silence" "1" "$(echo "$out" | grep -c '"t":"filtered"')"
+check "and a window after the close answers nothing" "2" "$(echo "$out" | grep -c '"t":"frows"')"
+out=$(printf '{"c":"list","path":"%s","first":0}\n{"c":"filter","query":"t","gen":1,"first":0,"count":10}\n{"c":"sort","by":"name","desc":true}\n{"c":"filterwindow","start":0,"count":5}\n{"c":"filter","query":"t","gen":2,"first":0,"count":10}\n{"c":"quit"}\n' "$F" | $BIN --backend)
+check "a sort drops the standing matches, so a window over the new numbering is silent until the next query" "2" "$(echo "$out" | grep -c '"t":"frows"')"
+check "and the next query answers over the new order" "three.txt:1 empty.txt:2" "$(echo "$out" | grep '"t":"frows"' | tail -1 | grep -oE '"n":"[^"]+"|"r":[0-9]+' | paste -d: - - | tr -d '"' | sed 's/^n://; s/:r:/:/' | tr '\n' ' ' | sed 's/ $//')"
+
 # No per-key cleanup: the cache is inside the sandbox, so it goes when the sandbox does.
 sandbox_remove "$SB"
 exit $fail

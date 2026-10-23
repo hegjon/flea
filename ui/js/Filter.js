@@ -17,7 +17,8 @@ var WORDS = {
 // The filter narrows the listing already on screen: no walk, no round trip, and every row it keeps
 // is one the backend has already sent. ui/js/Search.js is its bigger sibling, which walks the
 // subtree and replaces the listing; the design canvas draws the two as different things and this
-// file never reaches ui/Backend.qml at all.
+// file never reaches ui/Backend.qml at all. ui/js/FilterWire.js is what asks the backend to test the
+// rest of a folder the held window does not cover, and takes its answers back (issue 315).
 //
 // Two index spaces meet here. A "listing row" is what the backend numbers, what a selection holds
 // and what every write operation sends; a "view position" is where a row is drawn. With no filter
@@ -50,9 +51,17 @@ function at(list, view) {
     return view < list.length ? list[view] : -1
 }
 
-// -1 for a row the filter hides, which is what the callers below clamp against.
+// -1 for a row the filter hides, which is what the callers below clamp against. The list is ascending,
+// so this is a binary search: every drawn delegate asks, and a folder's answer can be 100,000 rows.
 function viewOf(list, row) {
-    return list === null ? row : list.indexOf(row)
+    if (list === null) return row
+    var lo = 0, hi = list.length - 1
+    while (lo <= hi) {
+        var mid = (lo + hi) >> 1
+        if (list[mid] === row) return mid
+        if (list[mid] < row) lo = mid + 1; else hi = mid - 1
+    }
+    return -1
 }
 
 // Issue 92, nixfred: a query matching nothing leaves the cursor on a row the filter no longer draws.
@@ -73,9 +82,10 @@ function summary(list, loaded, total) {
 }
 
 // States' no-match tile: the pane names the query back and says how many rows it tested, because
-// the query is up in a strip the reader may have looked away from.
-function noMatch(total) {
-    return total === 1 ? WORDS.noMatchOne : Format.fill(WORDS.noMatchMany, Format.count(total))
+// the query is up in a strip the reader may have looked away from. ui/StateMessage.qml draws it only
+// once the whole folder was tested (issue 315: 321 held rows once stood as "No match among 5,000 items").
+function noMatch(tested) {
+    return tested === 1 ? WORDS.noMatchOne : Format.fill(WORDS.noMatchMany, Format.count(tested))
 }
 
 // The rows drawn between two ends, which is not the range between them: a plain index range would
@@ -176,12 +186,21 @@ function close(pane) {
     pane.filterTyping = false
 }
 
+// Esc itself. The view sat at the top of the matches while the held window may be a thousand rows
+// down the folder, so the whole listing comes back parked on the cursor's row; left at the top it
+// drew a screen of rows the pane does not hold, which is the blank list in issue 315.
+function escape(pane) {
+    close(pane)
+    pane.showRow(pane.cursorIndex)
+}
+
 // The new query is applied here rather than by writing the property alone, because the selection has
 // to lose the rows that just dropped out before anything can act on rows nobody can see. The next
 // match list is computed rather than read back off the pane's binding, so the order is not a guess.
 function apply(pane, query) {
     var next = shown(pane.rows, pane.held, query)
-    prune(pane, next)
+    // Over a window smaller than the folder, only the held rows were tested; the folder's answer prunes the rest when it lands.
+    prune(pane, next, pane.rows.length < pane.total ? { first: pane.held, last: pane.held + pane.rows.length - 1 } : null)
     if (query !== pane.filterQuery) pane.filterKeyAt = Date.now()
     pane.filterQuery = query
     if (query.length > 0) pane.filterNarrowedAt = Date.now()
@@ -195,7 +214,9 @@ function apply(pane, query) {
 
 // A selection you cannot see is one you can act on by accident, and trash, cut and copy all take the
 // selection with no confirmation at all: what the filter hides, it takes out of the selection too.
-function prune(pane, list) {
+// span is the listing rows the list was tested over, or null for the whole folder: a selected row
+// outside it is untested rather than hidden, and stays until the folder's answer says (issue 315).
+function prune(pane, list, span) {
     if (list === null) {
         return
     }
@@ -206,6 +227,7 @@ function prune(pane, list) {
     var was = pane.selectedIndices()
     var dropped = 0
     for (var j = 0; j < was.length; j++) {
+        if (span && (was[j] < span.first || was[j] > span.last)) continue
         if (drawn[was[j]] !== true) {
             pane.selection.toggle(was[j])
             dropped += 1
@@ -269,7 +291,7 @@ function typeKey(event, pane) {
         return true
     }
     if (event.key === Qt.Key_Escape) {
-        close(pane)
+        escape(pane)
         return true
     }
     if (event.key === Qt.Key_Backspace) {
