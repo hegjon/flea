@@ -1,6 +1,7 @@
 .pragma library
 .import "Input.js" as Input
 
+.import "DirSizes.js" as DirSizes
 .import "Format.js" as Format
 .import "Match.js" as Match
 .import "Thumbs.js" as Thumbs
@@ -109,47 +110,58 @@ function keep(asked, list) {
     if (list === null) {
         return asked
     }
-    var drawn = {}
-    for (var i = 0; i < list.length; i++) {
-        drawn[list[i]] = true
-    }
     var out = []
     for (var j = 0; j < asked.length; j++) {
-        if (drawn[asked[j]] === true) {
+        if (viewOf(list, asked[j]) >= 0) {
             out.push(asked[j])
         }
     }
     return out
 }
 
-// A pending thumbnail can be hidden inside the planner's span as well as outside its viewport.
+// A pending thumbnail can be hidden inside the planner's span as well as outside its viewport. Each
+// pending row is looked up in the list, not the list spread into a table: the list can be a folder's
+// 100,000 matches and this runs on every keystroke and settle (issue 315).
 function cut(work, list, state) {
     var drop = work.drop.slice()
     if (list !== null) {
-        var drawn = {}
-        for (var i = 0; i < list.length; i++) drawn[list[i]] = true
         var dropping = {}
         for (var j = 0; j < drop.length; j++) dropping[drop[j]] = true
         for (var key in state.file) {
             var row = Number(key)
-            if (Thumbs.pending(state.file[key]) && drawn[row] !== true && dropping[row] !== true)
+            if (Thumbs.pending(state.file[key]) && viewOf(list, row) < 0 && dropping[row] !== true)
                 drop.push(row)
         }
     }
     return { ask: keep(work.ask, list), drop: drop }
 }
 
-// The listing rows a view range covers, for the two planners that take a first and a last.
-function span(list, first, last) {
-    if (list === null) {
-        return { first: first, last: last }
-    }
-    if (list.length === 0) {
-        return { first: 0, last: -1 }
-    }
+// The rows a view range draws under a filter, each the row the pane holds for its listing row, from the
+// held window or the filter's (issue 315), or null for one not landed yet: what the two planners below
+// walk, since the drawn rows are a set and not a run, and two matches a hundred thousand rows apart are
+// two steps and not a walk of the rows between.
+function drawn(pane, first, last) {
+    var list = pane.shown
+    var out = []
+    if (list.length === 0) return out
     var lo = Math.max(0, Math.min(list.length - 1, first))
     var hi = Math.max(0, Math.min(list.length - 1, last))
-    return { first: list[lo], last: list[hi] }
+    for (var v = lo; v <= hi; v++) out.push({ index: list[v], row: pane.rowFor(list[v]) })
+    return out
+}
+
+// The thumbnail plan over what a view range draws: the held window's run with no filter up, else the
+// rows drawn, so a matched row only the filter window holds gets its thumbnail too, and every pending
+// row the range does not draw, hidden or scrolled off, is dropped. first and last are view positions.
+function planThumbs(pane, first, last, mode) {
+    if (pane.shown === null) return Thumbs.plan(pane.thumbState, pane.rows, pane.held, first, last, mode)
+    return Thumbs.planDrawn(pane.thumbState, drawn(pane, first, last), mode)
+}
+
+// The folder-size plan the same way.
+function planDirSizes(pane, first, last) {
+    if (pane.shown === null) return DirSizes.plan(pane.dirSizeState, pane.rows, pane.held, first, last)
+    return DirSizes.planDrawn(pane.dirSizeState, drawn(pane, first, last))
 }
 
 // The transitions, taking ui/Pane.qml's root the way ui/js/Search.js and ui/js/Sort.js do: the pane
@@ -190,25 +202,56 @@ function close(pane) {
 // down the folder, so the whole listing comes back parked on the cursor's row; left at the top it
 // drew a screen of rows the pane does not hold, which is the blank list in issue 315.
 function escape(pane) {
+    var cursor = pane.cursorIndex
     close(pane)
-    pane.showRow(pane.cursorIndex)
+    park(pane, cursor)
+}
+
+// The listing back whole, parked on the row the cursor held under the filter. The count growing moved
+// the view to its top (ui/StableModel.qml resize) and the view pulled the cursor onto a row there
+// (clampCursor below), all inside the write of the query, so the cursor is read before and put back after.
+function park(pane, cursor) {
+    if (pane.cursorIndex !== cursor) {
+        pane.cursorIndex = cursor
+        pane.cursorSeq += 1
+    }
+    pane.showRow(cursor)
 }
 
 // The new query is applied here rather than by writing the property alone, because the selection has
 // to lose the rows that just dropped out before anything can act on rows nobody can see. The next
 // match list is computed rather than read back off the pane's binding, so the order is not a guess.
+// The cursor is settled first, because the write of the query asks the backend around the cursor
+// (ui/js/FilterWire.js ask) and moves the view, which pulls the cursor the way park above says.
 function apply(pane, query) {
     var next = shown(pane.rows, pane.held, query)
     // Over a window smaller than the folder, only the held rows were tested; the folder's answer prunes the rest when it lands.
     prune(pane, next, pane.rows.length < pane.total ? { first: pane.held, last: pane.held + pane.rows.length - 1 } : null)
+    var cursor = pane.cursorIndex
+    // A cursor the keystroke hid takes the first row still standing, so it is never off screen. Hidden is
+    // tested and failed: a held row not among the matches, or a row only the filter window holds whose
+    // name fails the query. A row the held matches do not name and no test failed is untested, outside
+    // every window the pane holds or matching in the filter's: it stays for the folder's answer to judge,
+    // so a letter never moves the cursor off a row that still matches (issue 315).
+    var row = pane.rowFor(cursor)
+    var kept = next === null || viewOf(next, cursor) >= 0
+    var hidden = !kept && next.length > 0 && !!row && Match.run(row.n, query).start < 0
+    if (hidden) {
+        pane.cursorIndex = next[0]
+        pane.cursorSeq += 1
+    }
+    var emptied = query.length === 0 && pane.filterQuery.length > 0
     if (query !== pane.filterQuery) pane.filterKeyAt = Date.now()
     pane.filterQuery = query
     if (query.length > 0) pane.filterNarrowedAt = Date.now()
-    // A cursor the filter just hid takes the first row still standing, so it is never off screen.
-    if (next !== null && next.length > 0 && viewOf(next, pane.cursorIndex) < 0) {
-        pane.cursorIndex = next[0]
-        pane.cursorSeq += 1
+    if (emptied) {
+        park(pane, cursor)
+    } else if (hidden) {
         pane.showRow(0)
+    } else if (!kept && pane.cursorIndex !== cursor) {
+        // The view's pull took an untested cursor; it goes back, and the folder's answer scrolls to it or moves it.
+        pane.cursorIndex = cursor
+        pane.cursorSeq += 1
     }
 }
 
@@ -216,19 +259,16 @@ function apply(pane, query) {
 // selection with no confirmation at all: what the filter hides, it takes out of the selection too.
 // span is the listing rows the list was tested over, or null for the whole folder: a selected row
 // outside it is untested rather than hidden, and stays until the folder's answer says (issue 315).
+// Each selected row is looked up in the list, so a folder's 100,000 matches cost nothing with nothing selected.
 function prune(pane, list, span) {
     if (list === null) {
         return
-    }
-    var drawn = {}
-    for (var i = 0; i < list.length; i++) {
-        drawn[list[i]] = true
     }
     var was = pane.selectedIndices()
     var dropped = 0
     for (var j = 0; j < was.length; j++) {
         if (span && (was[j] < span.first || was[j] > span.last)) continue
-        if (drawn[was[j]] !== true) {
+        if (viewOf(list, was[j]) < 0) {
             pane.selection.toggle(was[j])
             dropped += 1
         }

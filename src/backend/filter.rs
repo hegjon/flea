@@ -66,13 +66,32 @@ pub fn runs(matches: &[usize]) -> Runs {
     out
 }
 
-// The matched rows a view window names, clamped the way window clamps, with the gen they answer.
-// None with no query standing over this numbering, so a window that raced a close or a sort is silent.
-pub fn window(standing: &Option<Standing>, generation: u64, start: usize, count: usize) -> Option<(Vec<usize>, usize)> {
+// The matched rows a view window names, clamped the way window clamps, with the gen they answer and
+// the start as clamped, which is what the frows line says. None with no query standing over this
+// numbering, so a window that raced a close or a sort is silent.
+pub fn window(standing: &Option<Standing>, generation: u64, start: usize, count: usize) -> Option<(Vec<usize>, usize, usize)> {
     let s = standing.as_ref().filter(|s| s.generation == generation)?;
     let end = start.saturating_add(count).min(s.matches.len());
     let start = start.min(end);
-    Some((s.matches[start..end].to_vec(), s.gen))
+    Some((s.matches[start..end].to_vec(), s.gen, start))
+}
+
+// The client's cursor as a filter request names it: the listing row it is on, and how many matches
+// ahead of it the first window should hold.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Cursor {
+    pub at: usize,
+    pub before: usize,
+}
+
+// Where a query's first window starts: before matches ahead of the match at the cursor's row, worked
+// out here because the client knows the position of its cursor among the rows it holds and not among
+// the folder's matches. With no match at that row the client's cursor takes the first match, so the
+// window starts there. 0 with nothing standing.
+pub fn start_around(standing: &Option<Standing>, generation: u64, cursor: Cursor) -> usize {
+    let Some(s) = standing.as_ref().filter(|s| s.generation == generation) else { return 0 };
+    let pos = s.matches.partition_point(|&m| m < cursor.at);
+    if s.matches.get(pos) == Some(&cursor.at) { pos.saturating_sub(cursor.before) } else { 0 }
 }
 
 // Sample output: {"t":"filtered","gen":3,"n":11,"runs":[[233,1],[2340,10]],"ms":0.412,"listing":1}
@@ -148,11 +167,26 @@ mod tests {
         let l = listing();
         let mut standing = None;
         answer(&mut standing, &l, 1, "s", 5);
-        assert_eq!(window(&standing, 1, 0, 2), Some((vec![0, 1], 5)));
-        assert_eq!(window(&standing, 1, 3, 10), Some((vec![3, 5, 6], 5)), "the end clamps to the match count");
-        assert_eq!(window(&standing, 1, 9, 10), Some((vec![], 5)), "a start past the end answers no rows");
+        assert_eq!(window(&standing, 1, 0, 2), Some((vec![0, 1], 5, 0)));
+        assert_eq!(window(&standing, 1, 3, 10), Some((vec![3, 5, 6], 5, 3)), "the end clamps to the match count");
+        assert_eq!(window(&standing, 1, 9, 10), Some((vec![], 5, 6)), "a start past the end answers no rows, and says where the matches end");
         assert_eq!(window(&standing, 2, 0, 2), None, "a sort since means these indices name other rows");
         assert_eq!(window(&None, 1, 0, 2), None);
+    }
+
+    #[test]
+    fn the_first_window_starts_before_the_cursors_match_or_at_the_first_match() {
+        let l = listing();
+        let mut standing = None;
+        // Matches of "s": 0 1 2 3 5 6, so row 5 is the fifth match, position 4.
+        answer(&mut standing, &l, 1, "s", 1);
+        let cursor = |at, before| Cursor { at, before };
+        assert_eq!(start_around(&standing, 1, cursor(5, 1)), 3, "one match ahead of the cursor's");
+        assert_eq!(start_around(&standing, 1, cursor(5, 10)), 0, "a buffer longer than the matches ahead clamps at 0");
+        assert_eq!(start_around(&standing, 1, cursor(4, 1)), 0, "readme.txt holds no s, so the cursor will take the first match");
+        assert_eq!(start_around(&standing, 1, cursor(6, 0)), 5, "the last match with no buffer is its own position");
+        assert_eq!(start_around(&standing, 2, cursor(5, 1)), 0, "another numbering has nothing standing");
+        assert_eq!(start_around(&None, 1, cursor(5, 1)), 0);
     }
 
     #[test]

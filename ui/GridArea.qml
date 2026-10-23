@@ -651,8 +651,7 @@ GridView {
         if (!root.visible || root.pane.listInFlight || !root.pane.storageKnown)
             return
         var range = root.visibleRange()
-        var span = Filter.span(root.pane.shown, range.first, range.last)
-        var work = Filter.cut(Thumbs.plan(root.pane.thumbState, root.pane.rows, root.pane.held, span.first, span.last, ViewState.thumbnailMode), root.pane.shown, root.pane.thumbState)
+        var work = Filter.planThumbs(root.pane, range.first, range.last, ViewState.thumbnailMode)
         work.drop = work.drop.filter(function (index) { return index !== root.pane.previewIndex })
         root.pane.backend.thumbcancel(work.drop)
         work.cacheOnly = ExtThumbs.cacheOnly(root.pane.storageClass, ViewState.preview)
@@ -667,8 +666,7 @@ GridView {
         if (!DirSizes.wantsSizes("grid", ViewState.hiddenCols, root.pane.storageClass, root.pane.storageKnown))
             return
         var range = root.visibleRange()
-        var span = Filter.span(root.pane.shown, range.first, range.last)
-        var ask = Filter.keep(DirSizes.plan(root.pane.dirSizeState, root.pane.rows, root.pane.held, span.first, span.last), root.pane.shown)
+        var ask = Filter.planDirSizes(root.pane, range.first, range.last)
         if (ask.length > 0)
             root.pane.backend.dirsize(ask)
         root.dirSizesApplied(ask)

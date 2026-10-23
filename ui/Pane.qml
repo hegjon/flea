@@ -144,9 +144,10 @@ FocusScope {
     // The filter stopwatch Ipc's filterStamps reads: the newest keystroke and when it narrowed the shown model.
     property real filterKeyAt: 0
     property real filterNarrowedAt: 0
-    // FilterWire asks the backend to test the whole folder's names (issue 315): the ask's gen per keystroke and the numbering it was made for, the answer it holds, and the view-space window of matched rows with the Kind dictionary its rows index.
+    // FilterWire asks the backend to test the whole folder's names (issue 315): the ask's gen per keystroke, the numbering and the query it was made for, the answer it holds, and the view-space window of matched rows with the Kind dictionary its rows index.
     property int filterGen: 0
     property real filterAskedFor: -1
+    property string filterAsked: ""
     property var filterAnswer: null
     property int filterHeld: 0
     property var filterRows: []

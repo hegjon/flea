@@ -11,19 +11,20 @@ use crate::backend::state::{State, Tables};
 use crate::error::FleaError;
 use std::io::Write;
 
-// One keystroke: the folder's answer as runs, then the first window of its rows, in that order so
-// the client sets the shown model before the rows that fill it land.
-pub fn query(out: &mut impl Write, st: &mut State, tb: &Tables, query: &str, gen: usize, first: usize, count: usize) {
+// One keystroke: the folder's answer as runs, then the first window of its rows, placed around the
+// client's cursor, in that order so the client sets the shown model before the rows that fill it land.
+pub fn query(out: &mut impl Write, st: &mut State, tb: &Tables, query: &str, gen: usize, cursor: filter::Cursor, count: usize) {
     if let Some((n, runs, ms)) = filter::answer(&mut st.filter, &st.listing, st.generation, query, gen) {
         writeln!(out, "{}", filter::filtered_line(gen, n, &runs, ms, st.generation)).ok();
-        window(out, st, tb, first, count);
+        let start = filter::start_around(&st.filter, st.generation, cursor);
+        window(out, st, tb, start, count);
     }
     out.flush().ok();
 }
 
 // One view window of the standing matches, stat'd now; silent when no query stands over this numbering.
 pub fn window(out: &mut impl Write, st: &State, tb: &Tables, start: usize, count: usize) {
-    let Some((indices, gen)) = filter::window(&st.filter, st.generation, start, count) else { return };
+    let Some((indices, gen, start)) = filter::window(&st.filter, st.generation, start, count) else { return };
     match metas_at(st, &indices) {
         Ok((metas, ms)) => {
             let mut kinds = tb.kinds.borrow_mut();
@@ -38,6 +39,7 @@ pub fn window(out: &mut impl Write, st: &State, tb: &Tables, start: usize, count
 }
 
 // The matched rows' metas: remoteness is decided before anything is moved, so a local set stats inline and a remote one moves only its rows to the worker.
+// The mount table is read once and handed down, so a slow local pass does not read it again for its thread gate.
 fn metas_at(st: &State, indices: &[usize]) -> Result<(Vec<Meta>, f64), FleaError> {
     let body = std::fs::read_to_string("/proc/self/mountinfo").unwrap_or_default();
     if super::iomount::is_remote(&st.base, &body) {
@@ -46,6 +48,6 @@ fn metas_at(st: &State, indices: &[usize]) -> Result<(Vec<Meta>, f64), FleaError
         let base = st.base.clone();
         super::iomount::call(&base.clone(), &body, "filterwindow", move || meta::stat_window_rows(&base, &rows, threaded))
     } else {
-        Ok(meta::stat_at(&st.base, &st.listing, indices))
+        Ok(meta::stat_at(&st.base, &st.listing, indices, &body))
     }
 }

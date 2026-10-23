@@ -8,7 +8,9 @@
 // the pane holds whole is answered on the keystroke and asks nothing. docs/protocol.md "filter".
 
 // ui/Pane.qml onFilterQueryChanged. Each keystroke takes a new gen, so a late answer names the keystroke
-// it is for; an empty query closes the standing one. Over a listing still out, relisted below asks.
+// it is for, and the query asked is kept beside the gen; an empty query closes the standing one. Over a
+// listing still out, relisted below asks. The first window is placed around the cursor's listing row,
+// since only the backend knows where that row stands among the folder's matches.
 function ask(pane) {
     if (pane.filterQuery.length === 0) {
         pane.backend.filterClose()
@@ -22,12 +24,14 @@ function ask(pane) {
     if (pane.listInFlight) return false
     pane.filterGen += 1
     pane.filterAskedFor = pane.backend.heldListing
-    pane.backend.filter(pane.filterQuery, pane.filterGen, askStart(pane), pane.windowSize)
+    pane.filterAsked = pane.filterQuery
+    pane.backend.filter(pane.filterQuery, pane.filterGen, pane.cursorIndex, pane.buffer, pane.windowSize)
     return true
 }
 
 function drop(pane) {
     pane.filterAskedFor = -1
+    pane.filterAsked = ""
     if (pane.filterAnswer !== null) pane.filterAnswer = null
     if (pane.filterRows.length > 0) {
         pane.filterHeld = 0
@@ -36,16 +40,11 @@ function drop(pane) {
     }
 }
 
-// Where an answer's first window starts: around the cursor's view position in what is shown now, the
-// way the listing's own first window sits around the cursor, so the common keystroke lands with its rows.
-function askStart(pane) {
-    var view = Filter.viewOf(pane.shown, pane.cursorIndex)
-    return Math.max(0, (view < 0 ? 0 : view) - pane.buffer)
-}
-
-// A reply is for the standing query only while its gen is the newest and its numbering the one held.
+// A reply is for the standing query only while its gen is the newest, its numbering the one held and
+// the query asked with that gen the one standing: the query moves on with no ask while a listing is out.
 function current(pane, gen, listing) {
     return pane.filterQuery.length > 0 && gen === pane.filterGen && listing === pane.backend.heldListing
+        && pane.filterAsked === pane.filterQuery
 }
 
 // ui/PaneWire.qml onFiltered: the folder's answer. The selection loses what the folder hides, a cursor the
@@ -111,8 +110,9 @@ function tested(pane) {
     return pane.rows.length
 }
 
-// ui/List.qml and ui/GridArea.qml requestIfDrifted under a filter: the drawn rows are matches, so the window
-// asked for is the filter's own, in view space, with the listing window's own margin and buffer rules.
+// ui/List.qml, ui/GridArea.qml and ui/ColumnPane.qml requestIfDrifted under a filter: the drawn rows are
+// matches, so the window asked for is the filter's own, in view space, with the listing window's own
+// margin and buffer rules.
 function drift(pane, first, last) {
     var answer = pane.filterAnswer
     if (!answer || answer.query !== pane.filterQuery) return null
@@ -127,8 +127,16 @@ function drift(pane, first, last) {
     return ask
 }
 
-// ui/PaneSwap.qml takeRows: a window landed under a standing query. The same numbering changes nothing;
-// another one means the answer names other rows now, so the folder is asked again, once per numbering.
+// ui/PaneSwap.qml takeRows, before a row of another numbering is read: the standing answer and its window
+// name the numbering that went, so both go at once, and relisted below asks again once the rows are in.
+function renumbered(pane, listing) {
+    if (pane.filterAnswer && pane.filterAnswer.listing !== listing) drop(pane)
+}
+
+// ui/PaneSwap.qml rowsLanded, once no listing is out: rows landed under a standing query, by a swap or
+// alone. The same numbering changes nothing; another one means the answer names other rows now, so the
+// folder is asked again, once per numbering. The swap's own path lands through land, never the plain
+// window's, so this sits where both end.
 function relisted(pane, listing) {
     if ((pane.filterQuery || "").length === 0 || pane.filterAskedFor === listing) return false
     if (pane.filterAnswer !== null && pane.filterAnswer.listing === listing) return false

@@ -40,9 +40,10 @@ fn stat_range_at(base: &Path, l: &Listing, start: usize, count: usize, slow_ms: 
     stat_range_with(base, l, start, count, slow_ms, meta_one)
 }
 
-// Phase 2 for the rows a filter window names (issue 315): the pass stat_range runs, over a set and not a run.
-pub fn stat_at(base: &Path, l: &Listing, indices: &[usize]) -> (Vec<Meta>, f64) {
-    stat_pass(0, indices.len(), SLOW_PASS_MS, || l.threaded_cached(base), |k| cached_or(base, l, indices[k], &meta_one))
+// Phase 2 for the rows a filter window names (issue 315): the pass stat_range runs, over a set and not a
+// run, with the thread gate read off the mount table the caller already holds.
+pub fn stat_at(base: &Path, l: &Listing, indices: &[usize], body: &str) -> (Vec<Meta>, f64) {
+    stat_pass(0, indices.len(), SLOW_PASS_MS, || l.threaded_cached_with(body), |k| cached_or(base, l, indices[k], &meta_one))
 }
 
 // The test seam: stat names the per-row function, so a counting or slow stub observes the trigger.

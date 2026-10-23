@@ -8,7 +8,9 @@ import "flea/js/Filter.js" as Filter
 // Issue 315 on the real Pane and backend, offscreen, in a 5,000-file folder whose held window is a
 // screenful and a buffer each side: a query names a file the window does not hold, the folder's answer
 // shows it with its row drawn, a query no name holds says so for the folder, and Esc parks the listing
-// on the cursor's row with every drawn row held.
+// on the cursor's row with every drawn row held. Then the cursor moved 600 matches down a 1,000-match
+// answer, where the view's reset to the top used to pull it: Esc keeps it, a letter its row still
+// matches keeps it from outside the held window, and backspacing the query away parks on it.
 ShellRoot {
     id: root
 
@@ -26,7 +28,20 @@ ShellRoot {
         { slash: true }, { type: "zzz" }, { answered: true }, { settle: 300 },
         { check: "none" },
         { escape: true }, { settle: 300 },
-        { check: "closed" }
+        { check: "closed" },
+        // file-2000 to file-2999 match, rows 1999 to 2998; the cursor goes to row 2899, file-2900.txt, view position 900.
+        { slash: true }, { type: "file-2" }, { answered: true }, { settle: 300 },
+        { cursorRow: 2899 }, { rowHeld: 2899 }, { settle: 300 },
+        { check: "far" },
+        { escape: true }, { rowHeld: 2899 }, { settle: 300 },
+        { check: "parkedFar" },
+        // Under "9" the cursor goes to row 899, file-0900.txt, outside the held window around 2899; "90" still names it.
+        { slash: true }, { type: "9" }, { answered: true }, { settle: 300 },
+        { cursorRow: 899 }, { rowHeld: 899 }, { settle: 300 },
+        { type: "0" }, { answered: true }, { rowHeld: 899 }, { settle: 300 },
+        { check: "kept" },
+        { backspace: 2 }, { rowHeld: 899 }, { settle: 300 },
+        { check: "emptied" }
     ]
     property int at: 0
     property var awaiting: null
@@ -120,6 +135,12 @@ ShellRoot {
         } else if (op.cursor !== undefined) {
             root.pane.listArea.forceActiveFocus()
             Filter.setCursorView(root.pane, op.cursor)
+        } else if (op.cursorRow !== undefined) {
+            Filter.setCursor(root.pane, op.cursorRow)
+        } else if (op.rowHeld !== undefined) {
+            root.awaiting = function () { return root.pane.rowFor(op.rowHeld) !== null }
+        } else if (op.backspace !== undefined) {
+            for (var b = 0; b < op.backspace; b++) root.keys.keyClick(Qt.Key_Backspace, Qt.NoModifier, -1)
         } else if (op.settle !== undefined) {
             root.settle(op.settle)
         } else if (op.slash) {
@@ -164,6 +185,32 @@ ShellRoot {
             root.results.push("none tile=" + JSON.stringify(tile ? tile.detail : ""))
         } else if (what === "closed") {
             if (p.filterQuery.length !== 0 || blank(rows) !== 0) root.fail("Esc after no match left " + blank(rows) + " blank rows")
+        } else if (what === "far") {
+            if (p.shownTotal !== 1000 || p.cursorIndex !== 2899) root.fail("file-2 shows " + p.shownTotal + " rows with the cursor at " + p.cursorIndex)
+            var far = p.rowFor(2899)
+            if (!far || far.n !== "file-2900.txt") root.fail("the cursor's row 600 matches down has no row to draw: " + JSON.stringify(far))
+            if (rows.length < 20 || blank(rows) !== 0) root.fail("600 matches down " + blank(rows) + " of " + rows.length + " drawn rows have no row")
+            if (!rows.some(function (r) { return r.index === 2899 })) root.fail("the cursor's row is not on screen 600 matches down")
+            root.results.push("far drawn=" + rows.length + " blank=" + blank(rows))
+        } else if (what === "parkedFar") {
+            if (p.filterQuery.length !== 0 || p.shown !== null) root.fail("Esc on a scrolled result left the filter up")
+            if (p.cursorIndex !== 2899) root.fail("Esc on a scrolled result moved the cursor: " + p.cursorIndex)
+            if (rows.length < 20 || blank(rows) !== 0) root.fail("after Esc on a scrolled result " + blank(rows) + " of " + rows.length + " drawn rows have no row")
+            if (!rows.some(function (r) { return r.index === 2899 })) root.fail("after Esc on a scrolled result the cursor's row is not on screen")
+            root.results.push("esc far drawn=" + rows.length + " blank=" + blank(rows))
+        } else if (what === "kept") {
+            if (p.filterQuery !== "90") root.fail("the query is " + JSON.stringify(p.filterQuery))
+            if (p.cursorIndex !== 899) root.fail("a letter moved the cursor off a row that still matches: " + p.cursorIndex)
+            if (Filter.viewOf(p.shown, 899) < 0) root.fail("the folder's answer does not show the cursor's row")
+            if (rows.length < 10 || blank(rows) !== 0) root.fail("under 90 " + blank(rows) + " of " + rows.length + " drawn rows have no row")
+            if (!rows.some(function (r) { return r.index === 899 })) root.fail("the cursor's row is not on screen under 90")
+            root.results.push("kept shown=" + p.shownTotal + " drawn=" + rows.length)
+        } else if (what === "emptied") {
+            if (p.filterQuery.length !== 0 || p.shown !== null) root.fail("backspacing the query away left the filter up")
+            if (p.cursorIndex !== 899) root.fail("backspacing the query away moved the cursor: " + p.cursorIndex)
+            if (rows.length < 20 || blank(rows) !== 0) root.fail("after the query emptied " + blank(rows) + " of " + rows.length + " drawn rows have no row")
+            if (!rows.some(function (r) { return r.index === 899 })) root.fail("after the query emptied the cursor's row is not on screen")
+            root.results.push("emptied drawn=" + rows.length + " blank=" + blank(rows))
         }
     }
 

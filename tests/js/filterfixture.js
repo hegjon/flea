@@ -53,9 +53,10 @@ function pane(query, held) {
         contexts: [],
         picked: {},
         listInFlight: false,
-        // ui/Pane.qml's FilterWire state: the ask's gen and numbering, the folder's answer, the view-space window of matched rows, and the window rules the drift check reads.
+        // ui/Pane.qml's FilterWire state: the ask's gen, numbering and query, the folder's answer, the view-space window of matched rows, and the window rules the drift check reads.
         filterGen: 0,
         filterAskedFor: -1,
+        filterAsked: "",
         filterAnswer: null,
         filterHeld: 0,
         filterRows: [],
@@ -66,12 +67,12 @@ function pane(query, held) {
         refetchMargin: 25
     }
     // The backend calls the filter's wire makes, recorded in order: a window as "start:count", a filter as
-    // "filter query:gen:first:count", a filter window as "fwindow start:count" and a close as "close".
+    // "filter query:gen:at:before:count", a filter window as "fwindow start:count" and a close as "close".
     p.backend = {
         heldListing: 1,
         asked: [],
         window: function (start, count) { p.backend.asked.push(start + ":" + count) },
-        filter: function (query, gen, first, count) { p.backend.asked.push("filter " + query + ":" + gen + ":" + first + ":" + count) },
+        filter: function (query, gen, at, before, count) { p.backend.asked.push("filter " + query + ":" + gen + ":" + at + ":" + before + ":" + count) },
         filterWindow: function (start, count) { p.backend.asked.push("fwindow " + start + ":" + count) },
         filterClose: function () { p.backend.asked.push("close") }
     }

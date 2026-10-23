@@ -256,7 +256,7 @@ Item {
     }
 
     // The filter's wire, issue 315: the standing query with its gen and first view window, a later view window, and the close.
-    function filter(query, gen, first, count) { root.send({ c: "filter", query: query, gen: gen, first: first, count: count }) }
+    function filter(query, gen, at, before, count) { root.send({ c: "filter", query: query, gen: gen, at: at, before: before, count: count }) }
     function filterWindow(start, count) { root.send({ c: "filterwindow", start: start, count: count }) }
     function filterClose() { root.send({ c: "filterclose" }) }
 

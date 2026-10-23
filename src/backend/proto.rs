@@ -19,7 +19,7 @@ pub enum Request {
     SearchQuery { query: String, gen: usize, count: Option<usize>, sizes: Option<usize> },
     SearchClose,
     // The filter's three, issue 315: a query over the listing's names with its first view window, a later view window, and the close.
-    Filter { query: String, gen: usize, first: usize, count: usize },
+    Filter { query: String, gen: usize, at: usize, before: usize, count: usize },
     FilterWindow { start: usize, count: usize },
     FilterClose,
     // cacheOnly answers from the shared cache alone and never starts a decoder, for a
@@ -183,7 +183,8 @@ pub fn parse_request(line: &str) -> Request {
             query: field_str(line, "query").unwrap_or_default(),
             // Absent is never newer, so a query without a generation answers nothing.
             gen: field_usize(line, "gen").unwrap_or(0),
-            first: field_usize(line, "first").unwrap_or(0),
+            at: field_usize(line, "at").unwrap_or(0),
+            before: field_usize(line, "before").unwrap_or(0),
             count: field_usize(line, "count").unwrap_or(0),
         },
         Some("filterwindow") => Request::FilterWindow {

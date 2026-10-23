@@ -363,7 +363,7 @@ fn handle_line(
             out.flush().ok();
         }
         // The filter's wire, issue 315: src/backend/filterreq.rs answers over the names the listing holds.
-        Request::Filter { query, gen, first, count } => filterreq::query(out, st, tb, &query, gen, first, count),
+        Request::Filter { query, gen, at, before, count } => filterreq::query(out, st, tb, &query, gen, super::filter::Cursor { at, before }, count),
         Request::FilterWindow { start, count } => filterreq::window(out, st, tb, start, count),
         Request::FilterClose => st.filter = None,
         Request::Search { path, query, hidden } => {
@@ -805,6 +805,8 @@ pub fn forget_rows(st: &mut State, pool: &Pool) {
     st.dirsizes.clear();
     st.dirsize_queue.clear();
     st.dirsize_worker.cancel();
+    // The filter's standing matches name rows of the numbering that just went, and its lowercased names are that listing's (issue 315).
+    st.filter = None;
 }
 
 // A worker-built listing lands without a syscall, carrying its own dev and writability.

@@ -507,9 +507,9 @@ With no session open it answers nothing.
 
 ### filter
 
-`{"c":"filter","query":"<string>","gen":<uint>,"first":<uint>,"count":<uint>}`
+`{"c":"filter","query":"<string>","gen":<uint>,"at":<uint>,"before":<uint>,"count":<uint>}`
 
-Example: `{"c":"filter","query":"file-2345","gen":9,"first":0,"count":330}`
+Example: `{"c":"filter","query":"file-2345","gen":9,"at":2344,"before":50,"count":330}`
 
 The `/` filter's ask, issue 315. Tests every name of the current listing, which the backend
 already holds, against `query` as a case-insensitive substring, the test `ui/js/Match.js` paints
@@ -517,18 +517,23 @@ in the row name, and answers two lines in this order:
 
 1. One `filtered` line naming the matches as runs of listing rows, so the client has the whole
    shown model before any row of it lands.
-2. One `frows` line for the view window `first..first+count` over those matches, stat'd now, the
-   same meaning `window`'s `start` and `count` have over the listing: `first` is a position among
-   the matches and not a listing row.
+2. One `frows` line for a view window of `count` matches, stat'd now, the same meaning `window`'s
+   `count` has over the listing. The window is placed around `at`, a listing row, the client's
+   cursor: it starts `before` matches ahead of the match at that row, clamped at the first, which
+   is where the client's cursor is kept and the position it scrolls to. With no match at `at` the
+   window starts at the first match, which is where the client's cursor goes then. The position
+   is worked out here because the client knows where its cursor stands among the rows it holds
+   and not among the folder's matches.
 
 No walk and no stat is paid for the matching itself: the names are the listing's, lowercased once
 per numbering and kept while the listing stands, and a query extending the previous one tests only
 the previous matches. `gen` is the client's number, newer per keystroke; a query whose `gen` is not
 newer than the last answered one is dropped in silence, so a burst answers only its newest. A
-`list`, `listpaths`, `sort` or search renumbers the rows and drops the standing matches with them;
-the next `filter` reads the names again under the new numbering. Over a search listing the whole
-ranked rest is adopted first, as a `sort` does, so no match names a row the ranking could still move.
-Missing fields default to the empty query, gen `0`, which is never newer, and `0`.
+`list`, `listpaths`, `sort` or search renumbers the rows and drops the standing matches with them,
+names included, so nothing of a folder left is kept; the next `filter` reads the names again under
+the new numbering. Over a search listing the whole ranked rest is adopted first, as a `sort` does,
+so no match names a row the ranking could still move. Missing fields default to the empty query,
+gen `0`, which is never newer, and `0`.
 
 ### filterwindow
 
@@ -538,8 +543,10 @@ Example: `{"c":"filterwindow","start":1200,"count":330}`
 
 Stats the matches `start..start+count` of the standing `filter` query and answers one `frows`
 line, which is how a client scrolling under a filter fetches the rows it is about to draw and
-nothing else. `start` and `count` are clamped to the match count. With no query standing over the
-current numbering it answers nothing, so a window that raced a close or a sort is silent.
+nothing else. `start` and `count` are clamped to the match count, and the line's `start` is the
+clamped one. With no query standing over the current numbering it answers nothing, so a window
+that raced a close or a sort is silent. A failure here, a remote mount not answering, is an
+`error` with `where` `filterwindow`, which ends only this request: the listing stands.
 
 ### filterclose
 
@@ -1852,7 +1859,8 @@ Example: `{"t":"frows","start":0,"rows":[{"n":"file-0234.txt","d":false,"s":0,"m
 
 The window of matched rows a `filter` or `filterwindow` asked for. The row shape is `rows`'
 own, with one field more: `r`, right after `k`, is the listing row this row is, because the rows a
-filter shows are a set and not a run and `start` here is a position among the matches. `kinds` is
+filter shows are a set and not a run and `start` here is a position among the matches, the one the
+window was placed or clamped at. `kinds` is
 this line's own Kind dictionary, which only its rows' `k` index; a client keeps it beside the
 listing window's. The line is stamped with `listing` and `gen` the way a session's rows line is.
 

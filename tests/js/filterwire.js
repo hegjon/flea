@@ -1,5 +1,6 @@
 .import "../../ui/js/Filter.js" as Filter
 .import "../../ui/js/FilterWire.js" as FilterWire
+.import "../../ui/js/Swap.js" as Swap
 .import "filterfixture.js" as Fixture
 
 // Issue 315: a query over a held window smaller than the folder asks the backend to test the folder's
@@ -33,9 +34,9 @@ function run(check) {
     var wide = Fixture.pane("", 400)
     wide.total = 5000
     type(wide, "20")
-    check("a query over a window smaller than the folder asks the backend once per keystroke, each with its own gen",
-          wide.backend.asked.join(" "), "filter 2:1:0:130 filter 20:2:0:130")
-    check("and the numbering asked for is the one held", wide.filterAskedFor, 1)
+    check("a query over a window smaller than the folder asks the backend once per keystroke, each with its own gen, around the cursor's row, which the held rows could not test, with the buffer ahead",
+          wide.backend.asked.join(" "), "filter 2:1:0:50:130 filter 20:2:0:50:130")
+    check("and the numbering and the query asked for are the ones standing", wide.filterAskedFor + ":" + wide.filterAsked, "1:20")
     check("until the answer lands, the held rows' own matches are shown", wide.shown.join(","), "405,406")
     check("and the strip counts only the rows tested so far", FilterWire.tested(wide), 7)
     check("the answer for the newest gen and the held numbering is taken", land(wide, [[12, 2], [2340, 1]]), true)
@@ -48,6 +49,15 @@ function run(check) {
     check("an answer for a stale gen is dropped", FilterWire.answered(wide, 1, 1, [[7, 1]], 1), false)
     check("as is one for another numbering", FilterWire.answered(wide, 2, 1, [[7, 1]], 2), false)
     check("and neither moved the shown model", wide.shown.join(","), "12,13,2340")
+    // A query that moved on with no ask, which a listing out allows, must not take the ask's answer as its own.
+    wide.listInFlight = true
+    Filter.typed(wide, "2"); wide.refresh(); FilterWire.ask(wide); wide.refresh()
+    check("a query typed while a listing is out keeps the gen asked", wide.filterGen + ":" + wide.filterAsked + ":" + wide.filterQuery, "2:20:202")
+    check("so the answer for that gen is not labelled with the query it was not for", FilterWire.answered(wide, 2, 3, [[12, 2], [2340, 1]], 1), false)
+    check("and the held rows answer meanwhile", wide.shown.join(","), "405,406")
+    wide.listInFlight = false
+    Filter.backspace(wide); wide.refresh(); FilterWire.ask(wide); wide.refresh()
+    land(wide, [[12, 2], [2340, 1]])
 
     // One view window of the matched rows, each naming its listing row back.
     var window = [{ n: "file-0012.txt", r: 12 }, { n: "file-0013.txt", r: 13 }, { n: "file-2340.txt", r: 2340 }]
@@ -91,11 +101,16 @@ function run(check) {
     type(out, "s")
     check("a query typed while a listing is out asks nothing yet", out.backend.asked.length, 0)
     out.listInFlight = false
-    check("the rows landing ask the folder", FilterWire.relisted(out, 1) && last(out) === "filter s:1:0:130", true)
+    check("the rows landing ask the folder", FilterWire.relisted(out, 1) && last(out) === "filter s:1:0:50:130", true)
     check("a window of the same numbering changes nothing", FilterWire.relisted(out, 1), false)
     land(out, [[1, 1]])
+    FilterWire.windowed(out, 0, [{ n: "scripts", r: 1 }], [], 1, out.filterGen)
     out.backend.heldListing = 2
-    check("another numbering drops the answer and asks again", FilterWire.relisted(out, 2) && out.filterAnswer === null && last(out).indexOf("filter s:2:") === 0, true)
+    // ui/PaneSwap.qml takeRows drops the old numbering's answer before its rows are read, and rowsLanded asks once they are in.
+    check("a window of the same numbering landing drops nothing", (FilterWire.renumbered(out, 1), out.filterAnswer !== null && out.filterRows.length === 1), true)
+    FilterWire.renumbered(out, 2)
+    check("another numbering drops the answer and its window at once", (out.filterAnswer === null) + ":" + out.filterRows.length + ":" + out.shown.join(","), "true:0:1")
+    check("and the rows landing ask again", FilterWire.relisted(out, 2) && last(out).indexOf("filter s:2:") === 0, true)
     check("and a pane with no query standing is left alone", FilterWire.relisted(Fixture.pane(), 3), false)
 
     // The selection: what the held rows hide goes on the keystroke, what they cannot test waits for the folder.
@@ -113,4 +128,9 @@ function run(check) {
     check("standing answers the held rows' own subsequence with no answer in", FilterWire.standing(null, rows, 0, "scr").join(","), "0,1,5,6")
     check("the folder's answer while it is for the standing query", FilterWire.standing({ query: "scr", list: [9] }, rows, 0, "scr").join(","), "9")
     check("and the held rows' own again once the query moved on", FilterWire.standing({ query: "sc", list: [9] }, rows, 0, "scr").join(","), "0,1,5,6")
+
+    // A filter window's stat on a stuck mount fails seconds later, when the user may be in another folder with its listing out.
+    var filtering = { listInFlight: true, listedSeen: true, swap: { drop: function () { filtering.dropped = true } } }
+    check("a filter window's failure ends only its own request, never the listing out for the folder since gone to",
+          Swap.failListing(filtering, "filterwindow", "/mnt/stuck") + "|" + (filtering.dropped === true) + "|" + filtering.listInFlight, "false|false|true")
 }
