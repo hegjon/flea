@@ -9,8 +9,9 @@ import "flea/js/Filter.js" as Filter
 // screenful and a buffer each side: a query names a file the window does not hold, the folder's answer
 // shows it with its row drawn, a query no name holds says so for the folder, and Esc parks the listing
 // on the cursor's row with every drawn row held. Then the cursor moved 600 matches down a 1,000-match
-// answer, where the view's reset to the top used to pull it: Esc keeps it, a letter its row still
-// matches keeps it from outside the held window, and backspacing the query away parks on it.
+// answer, where the view's reset to the top used to pull it: a watched re-read keeps it on its file at its
+// place on screen, Esc keeps it, a letter its row still matches keeps it from outside the held window,
+// and backspacing the query away parks on it.
 ShellRoot {
     id: root
 
@@ -33,6 +34,12 @@ ShellRoot {
         { slash: true }, { type: "file-2" }, { answered: true }, { settle: 300 },
         { cursorRow: 2899 }, { rowHeld: 2899 }, { settle: 300 },
         { check: "far" },
+        // Enter commits the query, then another program touches the folder: the watched re-read renumbers every row.
+        // The view first scrolls the cursor's row up the screen, off the place showRow would put it.
+        { scrollRows: 10 }, { settle: 300 },
+        { commit: true }, { settle: 300 },
+        { reread: true }, { relanded: true }, { settle: 300 },
+        { check: "reread" },
         { escape: true }, { rowHeld: 2899 }, { settle: 300 },
         { check: "parkedFar" },
         // Under "9" the cursor goes to row 899, file-0900.txt, outside the held window around 2899; "90" still names it.
@@ -53,6 +60,10 @@ ShellRoot {
     property int heldBefore: 0
     property double settledAt: 0
     property bool ticking: false
+    // The re-read's numbering before, where the cursor's row stood on screen, and the first filter window after.
+    property real listingBefore: -1
+    property real offsetBefore: 0
+    property int firstHeldAfter: -1
 
     FloatingWindow {
         id: win
@@ -96,6 +107,25 @@ ShellRoot {
         return out
     }
     function blank(rows) { return rows.filter(function (r) { return !r.held }).length }
+    // Where a drawn row stands in the viewport, or null when no delegate draws it.
+    function offsetOf(index) {
+        var v = root.pane.listArea
+        var kids = v.contentItem.children
+        for (var i = 0; i < kids.length; i++) {
+            if (kids[i].listingIndex === index && kids[i].visible) return kids[i].y - v.contentY
+        }
+        return null
+    }
+
+    Connections {
+        target: root.pane
+        function onFilterRowsChanged() {
+            var p = root.pane
+            if (root.listingBefore >= 0 && root.firstHeldAfter < 0 && p.filterAnswer !== null
+                    && p.filterAnswer.listing !== root.listingBefore && p.filterRows.length > 0)
+                root.firstHeldAfter = p.filterHeld
+        }
+    }
 
     Timer {
         interval: root.tickMs
@@ -151,6 +181,18 @@ ShellRoot {
             for (var i = 0; i < op.type.length; i++) root.keys.keyClickChar(op.type.charAt(i), Qt.NoModifier, -1)
         } else if (op.answered) {
             root.awaiting = function () { return root.answered() }
+        } else if (op.scrollRows !== undefined) {
+            root.pane.listArea.contentY += op.scrollRows * Flea.Theme.fileRowHeight
+        } else if (op.commit) {
+            root.keys.keyClick(Qt.Key_Return, Qt.NoModifier, -1)
+        } else if (op.reread) {
+            root.listingBefore = root.pane.backend.heldListing
+            root.offsetBefore = root.offsetOf(root.pane.cursorIndex)
+            realBackend.changed(root.fixture)
+        } else if (op.relanded) {
+            root.awaiting = function () {
+                return root.pane.backend.heldListing !== root.listingBefore && root.answered() && root.firstHeldAfter >= 0
+            }
         } else if (op.escape) {
             root.keys.keyClick(Qt.Key_Escape, Qt.NoModifier, -1)
         } else if (op.check !== undefined) {
@@ -192,6 +234,16 @@ ShellRoot {
             if (rows.length < 20 || blank(rows) !== 0) root.fail("600 matches down " + blank(rows) + " of " + rows.length + " drawn rows have no row")
             if (!rows.some(function (r) { return r.index === 2899 })) root.fail("the cursor's row is not on screen 600 matches down")
             root.results.push("far drawn=" + rows.length + " blank=" + blank(rows))
+        } else if (what === "reread") {
+            if (p.filterQuery !== "file-2" || p.filterTyping) root.fail("the re-read left the query " + JSON.stringify(p.filterQuery) + " typing=" + p.filterTyping)
+            if (p.shownTotal !== 1000 || p.cursorIndex !== 2899) root.fail("after the re-read file-2 shows " + p.shownTotal + " rows with the cursor at " + p.cursorIndex)
+            // The first window of the folder's answer is placed around the cursor's row, view position 900, so no row it draws waits on another ask.
+            if (root.firstHeldAfter !== 900 - p.buffer) root.fail("the re-read's first filter window starts at " + root.firstHeldAfter + ", not " + (900 - p.buffer))
+            if (rows.length < 20 || blank(rows) !== 0) root.fail("after the re-read " + blank(rows) + " of " + rows.length + " drawn rows have no row")
+            var at = root.offsetOf(2899)
+            if (at === null || root.offsetBefore === null || Math.abs(at - root.offsetBefore) > 0.5)
+                root.fail("the re-read moved the cursor's row on screen from " + root.offsetBefore + " to " + at)
+            root.results.push("reread first=" + root.firstHeldAfter + " offset=" + at)
         } else if (what === "parkedFar") {
             if (p.filterQuery.length !== 0 || p.shown !== null) root.fail("Esc on a scrolled result left the filter up")
             if (p.cursorIndex !== 2899) root.fail("Esc on a scrolled result moved the cursor: " + p.cursorIndex)

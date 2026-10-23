@@ -1,3 +1,4 @@
+.import "../../ui/js/Anchor.js" as Anchor
 .import "../../ui/js/Filter.js" as Filter
 .import "../../ui/js/FilterWire.js" as FilterWire
 .import "../../ui/js/Swap.js" as Swap
@@ -112,6 +113,67 @@ function run(check) {
     check("another numbering drops the answer and its window at once", (out.filterAnswer === null) + ":" + out.filterRows.length + ":" + out.shown.join(","), "true:0:1")
     check("and the rows landing ask again", FilterWire.relisted(out, 2) && last(out).indexOf("filter s:2:") === 0, true)
     check("and a pane with no query standing is left alone", FilterWire.relisted(Fixture.pane(), 3), false)
+
+    // A filter never moves the held window while the cursor walks the folder's matches, so a re-read with the cursor
+    // outside it asks the window around the cursor's row back, and its anchor waits for that one (ui/js/Anchor.js).
+    var reread = Fixture.pane("s", 400)
+    reread.total = 5000
+    reread.path = "/d"
+    reread.openWithoutHistory = function () { reread.backend.asked.push("list") }
+    reread.filterAnswer = { gen: 1, listing: 1, query: "s", list: [401, 2400] }
+    reread.refresh()
+    reread.filterHeld = 1
+    reread.filterRows = [{ n: "file-2400.txt", r: 2400 }]
+    reread.cursorIndex = 2400
+    var rereadAnchor = Anchor.watched(reread, false, 10)
+    check("a re-read with the cursor on a row only the filter window holds asks its window back around that row",
+          rereadAnchor.name + ":" + rereadAnchor.start + " " + reread.backend.asked.join(","), "file-2400.txt:2350 list,2350:130")
+    reread.backend.asked = []
+    reread.cursorIndex = 401
+    check("and one with the cursor in the held window asks that window back", Anchor.watched(reread, false, 10).start + " " + reread.backend.asked.join(","), "400 list,400:130")
+
+    // A re-read's anchor puts the cursor back on its file first; the folder is asked once it has, around that file.
+    var anchored = Fixture.pane("s", 400)
+    anchored.total = 5000
+    anchored.path = "/d"
+    anchored.wire = { anchor: { path: "/d" } }
+    anchored.cursorIndex = 2400
+    check("an anchor still out for this folder holds the ask", FilterWire.relisted(anchored, 1) + ":" + anchored.backend.asked.length, "false:0")
+    anchored.wire.anchor = null
+    check("and once it ends the folder is asked around the cursor it put back", FilterWire.relisted(anchored, 1) && last(anchored), "filter s:1:2400:50:130")
+
+    // The answer's count change moves a scrolled view to its top and the view pulls the cursor onto a row there, inside
+    // the write (ui/StableModel.qml resize, Filter.clampCursor): a stub whose answer write refreshes and pulls the same way.
+    function pulling(p) {
+        var standing = p.filterAnswer
+        Object.defineProperty(p, "filterAnswer", {
+            get: function () { return standing },
+            set: function (a) { standing = a; p.refresh(); if (a !== null && p.shown.length > 0) { p.cursorIndex = p.shown[0]; p.cursorSeq += 1 } },
+            configurable: true
+        })
+        return p
+    }
+    var pulled = pulling(Fixture.pane("", 400))
+    pulled.total = 5000
+    type(pulled, "e")
+    pulled.cursorIndex = 2340
+    land(pulled, [[12, 2], [2340, 1]])
+    check("an answer that keeps the cursor puts it back after the view's pull, and the view follows it", pulled.cursorIndex + ":" + pulled.scrolled, "2340:2")
+
+    // Where the cursor's row stood on screen when relisted asked is where its answer puts it back, measured as ui/js/AnchorHold.js does.
+    var placed = pulling(Fixture.pane("s", 400))
+    placed.total = 5000
+    placed.viewMode = "list"
+    placed.anchorRowHeight = 10
+    placed.listArea = { contentY: 0, originY: 0, height: 100, contentHeight: 10000, coalesced: 0, restartCoalesce: function () { placed.listArea.coalesced += 1 } }
+    placed.cursorIndex = 405
+    check("relisted keeps the place of a cursor drawn in the viewport, for the gen it asks", FilterWire.relisted(placed, 1) && JSON.stringify(placed.filterPlace), '{"offset":40,"rowH":10,"gen":1}')
+    land(placed, [[400, 7], [2340, 1]])
+    check("its answer puts the row back there and does not scroll to it", placed.listArea.contentY + ":" + placed.scrolled + ":" + placed.listArea.coalesced, "10:-1:1")
+    check("and the place is spent", placed.filterPlace, null)
+    placed.cursorIndex = 4000
+    placed.filterAnswer = null
+    check("a cursor no row on screen draws keeps no place", FilterWire.relisted(placed, 2) && placed.filterPlace, null)
 
     // The selection: what the held rows hide goes on the keystroke, what they cannot test waits for the folder.
     var marked = Fixture.pane("", 400)

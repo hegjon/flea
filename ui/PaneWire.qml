@@ -54,6 +54,8 @@ Item {
     property bool stale: false
     // What the cursor sat on across a re-read, or null; ui/js/Anchor.js owns both ends of it.
     property var anchor: null
+    // A standing filter waits for the cursor to be back on its file before it asks the folder again (issue 315).
+    onAnchorChanged: if (root.anchor === null) FilterWire.relisted(pane, pane.backend.heldListing)
     property int retryId: 0
     property var retryPaths: []
     property string retryFolder: ""

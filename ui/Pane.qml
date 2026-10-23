@@ -152,6 +152,8 @@ FocusScope {
     property int filterHeld: 0
     property var filterRows: []
     property var filterKinds: []
+    // Where the cursor's row stood on screen when a re-read asked the folder again, which that ask's answer puts it back to, or null.
+    property var filterPlace: null
     // How many rows the standing query has been tested against, which the strip and the no-match tile name.
     readonly property int filterTested: FilterWire.tested(root)
     onFilterQueryChanged: FilterWire.ask(root)

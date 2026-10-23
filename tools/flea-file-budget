@@ -160,7 +160,7 @@ ui/NetworkMounts.qml 913
 ui/OpenWithDialog.qml 613
 ui/Pane.qml 1253
 ui/PaneMenuActions.qml 527
-ui/PaneWire.qml 606
+ui/PaneWire.qml 608
 ui/PermissionsDialog.qml 658
 ui/PickerWindow.qml 846
 ui/Preview.qml 1010
@@ -181,7 +181,7 @@ ui/TrashView.qml 492
 ui/UnlockDialog.qml 450
 ui/ViewState.qml 565
 ui/WindowBody.qml 817
-ui/js/Anchor.js 379
+ui/js/Anchor.js 381
 ui/js/ColumnsCarry.js 103
 ui/js/Devices.js 440
 ui/js/Filter.js 346

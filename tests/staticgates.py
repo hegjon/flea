@@ -609,6 +609,7 @@ def stub_allowances():
         ('tests/js/filterfixture.js', 'contexts'): 'Records showRow or pointer dispatch context arguments.',
         ('tests/js/filterfixture.js', 'picked'): 'Stores the stub selection behind selection methods.',
         ('tests/js/filterfixture.js', 'scrolled'): 'Records the row requested through showRow.',
+        ('tests/js/filterwire.js', 'dropped'): 'Records swap.drop calls.',
         ('tests/js/focus-forward.js', 'rowsRead'): 'Records rowFor inputs.',
         ('tests/js/focus-forward.js', 'said'): 'Records messages emitted by the stub message signal.',
         ('tests/js/focus.js', 'clipRequests'): 'Records system clipboard requests dispatched by menu actions.',
